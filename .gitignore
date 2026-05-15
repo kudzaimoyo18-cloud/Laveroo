@@ -1,0 +1,11 @@
+# Original uncompressed video (252MB) — keep local only
+assets/hero.mp4
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Vercel
+.vercel
