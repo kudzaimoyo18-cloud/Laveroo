@@ -1,0 +1,9 @@
+# Original uncompressed 252MB hero video — local only, do not upload
+assets/hero.mp4
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.git/
