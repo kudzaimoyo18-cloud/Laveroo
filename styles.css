@@ -48,17 +48,44 @@ img { display: block; max-width: 100%; }
 .video-stage {
   position: fixed;
   inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* dynamic viewport — iOS URL bar friendly */
   z-index: 0;
   background: #000;
   overflow: hidden;
+  /* GPU layer so mobile doesn't repaint during scroll */
+  transform: translateZ(0);
+  will-change: transform;
 }
 .video-stage video {
   position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  top: 50%;
+  left: 50%;
+  /* fill the stage while preserving aspect ratio */
+  min-width: 100%;
+  min-height: 100%;
+  width: auto;
+  height: auto;
+  transform: translate(-50%, -50%) translateZ(0);
   object-fit: cover;
   filter: brightness(0.78) contrast(1.05) saturate(1.05);
+  pointer-events: none;
+}
+
+/* Mobile: lock dimensions so portrait phones don't crop the video to a sliver,
+   and detach from scroll-scrub (handled in JS) */
+@media (max-width: 880px) {
+  .video-stage video {
+    width: 100%;
+    height: 100%;
+    min-width: unset;
+    min-height: unset;
+    top: 0;
+    left: 0;
+    transform: translateZ(0);
+    object-fit: cover;
+  }
 }
 .video-overlay {
   position: absolute;

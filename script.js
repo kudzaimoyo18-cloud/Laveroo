@@ -16,19 +16,66 @@
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
   /* -------------------------------------------------------
-     Scroll-scrub video
-     Apple-style: video.currentTime tracks scroll progress.
-     We loop the timeline so as the user scrolls past one
-     video duration worth of pixels, the video plays once;
-     scrolling further loops it. Smooth via rAF.
+     Video playback mode
+     - Desktop / large viewports: Apple-style scroll-scrub
+       (video.currentTime tracks scroll progress, eased via rAF)
+     - Mobile / touch devices: plain autoplay + loop, because
+       iOS Safari throttles currentTime updates during momentum
+       scroll which makes scrubbing feel frozen.
      ------------------------------------------------------- */
+  const isMobileLike = window.matchMedia('(max-width: 880px)').matches
+    || window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
+  function hideLoader() {
+    if (loader && !loader.classList.contains('is-hidden')) {
+      loader.classList.add('is-hidden');
+    }
+  }
+
+  /* ---------- Mobile path: autoplay + loop ---------- */
+  function setupMobileVideo() {
+    // iOS needs these set as attributes too — we already do in HTML
+    video.muted = true;
+    video.loop = true;
+    video.setAttribute('autoplay', '');
+
+    const tryPlay = () => {
+      const p = video.play();
+      if (p && typeof p.then === 'function') {
+        p.catch(() => {
+          // autoplay blocked — start on first user gesture
+          const kick = () => { video.play().catch(() => {}); cleanup(); };
+          const cleanup = () => {
+            document.removeEventListener('touchstart', kick);
+            document.removeEventListener('click', kick);
+            document.removeEventListener('scroll', kick);
+          };
+          document.addEventListener('touchstart', kick, { once: true, passive: true });
+          document.addEventListener('click', kick, { once: true });
+          document.addEventListener('scroll', kick, { once: true, passive: true });
+        });
+      }
+    };
+
+    if (video.readyState >= 2) {
+      tryPlay();
+      hideLoader();
+    } else {
+      video.addEventListener('loadeddata', () => { tryPlay(); hideLoader(); }, { once: true });
+      video.addEventListener('canplay', () => { tryPlay(); hideLoader(); }, { once: true });
+    }
+    video.load();
+    // safety: hide loader after 4s regardless
+    setTimeout(hideLoader, 4000);
+  }
+
+  /* ---------- Desktop path: scroll-scrub ---------- */
   const scrub = {
     duration: 0,
     targetTime: 0,
     lastSetTime: 0,
     ready: false,
     rafId: 0,
-    // how many "video durations" per full page scroll (lower = faster scrub)
     scrollPerLoop: 0.55,
   };
 
@@ -36,24 +83,16 @@
     scrub.duration = video.duration || 0;
     if (scrub.duration > 0 && Number.isFinite(scrub.duration)) {
       scrub.ready = true;
-      // start the animation loop
       tick();
-      // hide loader once we have enough to render
       hideLoader();
     }
   }
-
-  function onCanPlay() {
-    // belt + braces in case loadedmetadata fired with no duration
-    if (!scrub.ready) onMeta();
-  }
+  function onCanPlay() { if (!scrub.ready) onMeta(); }
 
   function computeTarget() {
     const docHeight = document.documentElement.scrollHeight - window.innerHeight;
     if (docHeight <= 0) return 0;
     const progress = Math.min(1, Math.max(0, window.scrollY / docHeight));
-    // make the video advance through its timeline as we scroll;
-    // wrap to loop seamlessly if user scrolls past one playback length
     const loops = Math.max(0.25, scrub.scrollPerLoop);
     const t = (progress / loops) * scrub.duration;
     return t % scrub.duration;
@@ -62,40 +101,32 @@
   function tick() {
     if (!scrub.ready) return;
     scrub.targetTime = computeTarget();
-
-    // ease toward target for buttery scrub
     const cur = video.currentTime || 0;
     const diff = scrub.targetTime - cur;
-    // handle wrap (if target jumps backward past 0)
     let next;
     if (Math.abs(diff) > scrub.duration / 2) {
-      // crossing the loop boundary — snap
       next = scrub.targetTime;
     } else {
       next = cur + diff * 0.18;
     }
-
     if (Math.abs(next - scrub.lastSetTime) > 0.01) {
       try { video.currentTime = next; } catch (_) {}
       scrub.lastSetTime = next;
     }
-
     scrub.rafId = requestAnimationFrame(tick);
   }
 
-  video.addEventListener('loadedmetadata', onMeta, { once: true });
-  video.addEventListener('canplay', onCanPlay, { once: true });
+  function setupDesktopVideo() {
+    video.addEventListener('loadedmetadata', onMeta, { once: true });
+    video.addEventListener('canplay', onCanPlay, { once: true });
+    video.load();
+    setTimeout(hideLoader, 5000);
+  }
 
-  // some browsers need a kick
-  video.load();
-
-  // safety: hide loader after 5s even if video never reports duration
-  setTimeout(() => hideLoader(), 5000);
-
-  function hideLoader() {
-    if (loader && !loader.classList.contains('is-hidden')) {
-      loader.classList.add('is-hidden');
-    }
+  if (isMobileLike) {
+    setupMobileVideo();
+  } else {
+    setupDesktopVideo();
   }
 
   /* -------------------------------------------------------
@@ -148,13 +179,18 @@
   }
 
   /* -------------------------------------------------------
-     Pause animation loop when tab hidden
+     Pause work when tab hidden
      ------------------------------------------------------- */
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
-      cancelAnimationFrame(scrub.rafId);
-    } else if (scrub.ready) {
-      tick();
+      if (!isMobileLike) cancelAnimationFrame(scrub.rafId);
+      try { video.pause(); } catch (_) {}
+    } else {
+      if (isMobileLike) {
+        video.play().catch(() => {});
+      } else if (scrub.ready) {
+        tick();
+      }
     }
   });
 })();
